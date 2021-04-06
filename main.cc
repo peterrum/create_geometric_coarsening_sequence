@@ -137,6 +137,17 @@ main(int argc, char **argv)
   parallel::distributed::Triangulation<dim> tria(MPI_COMM_WORLD);
 
   GridGenerator::subdivided_hyper_cube(tria, 10, 0, 1, true);
+
+  unsigned int counter = 0;
+
+  for (const auto &cell : tria.active_cell_iterators())
+    {
+      cell->set_material_id(counter);
+      cell->set_manifold_id(counter);
+
+      counter++;
+    }
+
   tria.refine_global(1);
 
   const auto v = create_geometric_coarsening_sequence(tria);
