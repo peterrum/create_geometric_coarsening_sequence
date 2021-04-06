@@ -89,12 +89,34 @@ create_geometric_coarsening_sequence(
                 TriangulationDescription::Utilities::
                   create_description_from_triangulation_in_groups<dim, dim>(
                     [&](auto &tria) {
-                      auto const coarse_mesh_description =
+                      auto [points, cell_data, sub_cell_data] =
                         GridTools::get_coarse_mesh_description(temp_tria);
-                      tria.create_triangulation(
-                        std::get<0>(coarse_mesh_description),
-                        std::get<1>(coarse_mesh_description),
-                        std::get<2>(coarse_mesh_description));
+
+                      std::vector<std::pair<unsigned int, CellData<dim>>>
+                        cell_data_temp;
+
+                      unsigned int counter = 0;
+
+                      for (const auto &cell :
+                           temp_tria.cell_iterators_on_level(0))
+                        cell_data_temp.emplace_back(
+                          cell->id().get_coarse_cell_id(),
+                          cell_data[counter++]);
+
+                      std::sort(cell_data_temp.begin(),
+                                cell_data_temp.end(),
+                                [](const auto &a, const auto &b) {
+                                  return a.first < b.first;
+                                });
+
+                      cell_data.clear();
+
+                      for (const auto &i : cell_data_temp)
+                        cell_data.emplace_back(i.second);
+
+                      tria.create_triangulation(points,
+                                                cell_data,
+                                                sub_cell_data);
                     },
                     [&](auto &tria, auto const &, const auto) {
                       GridTools::partition_triangulation_zorder(n_partitions,
