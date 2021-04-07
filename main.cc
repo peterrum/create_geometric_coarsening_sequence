@@ -36,7 +36,7 @@ create_geometric_coarsening_sequence(
       temp_tria.copy_triangulation(*fine_triangulation);
       temp_tria.coarsen_global();
 
-      std::vector<unsigned int> coarse_grid_sizes;
+      std::vector<unsigned int> coarse_grid_sizes = {5};
 
       // create coarse meshes
       for (unsigned int l = (fine_triangulation->n_global_levels() - 1);
@@ -67,6 +67,30 @@ create_geometric_coarsening_sequence(
 
       // convert p:d:T to a serial Triangulation
 
+      unsigned int const group_size = [&]() {
+        auto comm = temp_tria.get_communicator();
+
+        int rank;
+        MPI_Comm_rank(comm, &rank);
+
+        MPI_Comm comm_shared;
+        MPI_Comm_split_type(
+          comm, MPI_COMM_TYPE_SHARED, rank, MPI_INFO_NULL, &comm_shared);
+
+        int size_shared;
+        MPI_Comm_size(comm_shared, &size_shared);
+
+        // determine maximum, since some shared memory communicators
+        // might not be filed completely
+        int size_shared_max;
+        MPI_Allreduce(
+          &size_shared, &size_shared_max, 1, MPI_INT, MPI_MAX, comm);
+
+        MPI_Comm_free(&comm_shared);
+
+        return size_shared_max;
+      }();
+
       for (unsigned int l = coarse_grid_sizes.size(); l > 0; --l)
         {
           // create empty (fully distributed) triangulation
@@ -79,32 +103,9 @@ create_geometric_coarsening_sequence(
               new_tria->set_manifold(i, fine_triangulation->get_manifold(i));
 
           unsigned int const n_partitions =
-            std::min<unsigned int>(5,
+            std::min<unsigned int>(coarse_grid_sizes[l - 1],
                                    Utilities::MPI::n_mpi_processes(
                                      fine_triangulation->get_communicator()));
-          unsigned int const group_size = [&]() {
-            auto comm = temp_tria.get_communicator();
-
-            int rank;
-            MPI_Comm_rank(comm, &rank);
-
-            MPI_Comm comm_shared;
-            MPI_Comm_split_type(
-              comm, MPI_COMM_TYPE_SHARED, rank, MPI_INFO_NULL, &comm_shared);
-
-            int size_shared;
-            MPI_Comm_size(comm_shared, &size_shared);
-
-            // determine maximum, since some shared memory communicators
-            // might not be filed completely
-            int size_shared_max;
-            MPI_Allreduce(
-              &size_shared, &size_shared_max, 1, MPI_INT, MPI_MAX, comm);
-
-            MPI_Comm_free(&comm_shared);
-
-            return size_shared_max;
-          }();
 
           // extract relevant information from distributed triangulation
           auto const construction_data = TriangulationDescription::Utilities::
