@@ -2,6 +2,7 @@
 #include <deal.II/distributed/tria.h>
 
 #include <deal.II/grid/grid_generator.h>
+#include <deal.II/grid/grid_in.h>
 #include <deal.II/grid/grid_out.h>
 
 using namespace dealii;
@@ -249,34 +250,55 @@ main(int argc, char **argv)
 {
   Utilities::MPI::MPI_InitFinalize mpi(argc, argv, 1);
 
-  const int                                 dim = 2;
+  const int                                 dim = 3;
   parallel::distributed::Triangulation<dim> tria(MPI_COMM_WORLD);
 
-  GridGenerator::subdivided_hyper_cube(tria, 10, 0, 1, true);
-
-  unsigned int counter = 0;
-
-  const unsigned int n_global_refinements = 1;
-  const unsigned int n_local_refinements  = 3;
-
-  for (const auto &cell : tria.active_cell_iterators())
+  if (false)
     {
-      cell->set_material_id(counter);
-      cell->set_manifold_id(counter);
+      GridGenerator::subdivided_hyper_cube(tria, 10, 0, 1, true);
 
-      counter++;
-    }
+      unsigned int counter = 0;
 
-  tria.refine_global(n_global_refinements);
+      const unsigned int n_global_refinements = 1;
+      const unsigned int n_local_refinements  = 3;
 
-  for (unsigned int i = 0; i < n_local_refinements; ++i)
-    {
       for (const auto &cell : tria.active_cell_iterators())
-        if (cell->is_locally_owned() && cell->center()[0] < 0.5)
-          cell->set_refine_flag();
-      tria.execute_coarsening_and_refinement();
-    }
+        {
+          cell->set_material_id(counter);
+          cell->set_manifold_id(counter);
 
+          counter++;
+        }
+
+      tria.refine_global(n_global_refinements);
+
+      for (unsigned int i = 0; i < n_local_refinements; ++i)
+        {
+          for (const auto &cell : tria.active_cell_iterators())
+            if (cell->is_locally_owned() && cell->center()[0] < 0.5)
+              cell->set_refine_flag();
+          tria.execute_coarsening_and_refinement();
+        }
+    }
+  else
+    {
+      dealii::GridIn<dim> grid_in(tria);
+      std::ifstream       file("triangulation.vtk");
+      grid_in.read_vtk(file);
+
+      const unsigned int n_global_refinements = 1;
+      const unsigned int n_local_refinements  = 3;
+
+      tria.refine_global(n_global_refinements);
+
+      for (unsigned int i = 0; i < n_local_refinements; ++i)
+        {
+          for (const auto &cell : tria.active_cell_iterators())
+            if (cell->is_locally_owned() && cell->manifold_id() < 16)
+              cell->set_refine_flag();
+          tria.execute_coarsening_and_refinement();
+        }
+    }
 
 
   const auto v = create_geometric_coarsening_sequence(tria);
