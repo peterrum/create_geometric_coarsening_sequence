@@ -222,6 +222,7 @@ create_geometric_coarsening_sequence(
                     group_size);
 
               // actually create triangulation
+              std::cout << "B" << std::endl;
               new_tria->create_triangulation(construction_data);
 
               // save mesh
@@ -232,6 +233,11 @@ create_geometric_coarsening_sequence(
             }
         }
     }
+
+#ifdef DEBUG
+  for (unsigned int i = 0; i < coarse_grid_triangulations.size(); ++i)
+    AssertDimension(i + 1, coarse_grid_triangulations[i]->n_global_levels());
+#endif
 
   return coarse_grid_triangulations;
 }
@@ -250,6 +256,9 @@ main(int argc, char **argv)
 
   unsigned int counter = 0;
 
+  const unsigned int n_global_refinements = 1;
+  const unsigned int n_local_refinements  = 3;
+
   for (const auto &cell : tria.active_cell_iterators())
     {
       cell->set_material_id(counter);
@@ -258,39 +267,52 @@ main(int argc, char **argv)
       counter++;
     }
 
-  tria.refine_global(2);
+  tria.refine_global(n_global_refinements);
+
+  for (unsigned int i = 0; i < n_local_refinements; ++i)
+    {
+      for (const auto &cell : tria.active_cell_iterators())
+        if (cell->is_locally_owned() && cell->center()[0] < 0.5)
+          cell->set_refine_flag();
+      tria.execute_coarsening_and_refinement();
+    }
+
+
 
   const auto v = create_geometric_coarsening_sequence(tria);
 
-  {
-    GridOutFlags::Vtk flags;
-    flags.output_cells         = false;
-    flags.output_faces         = true;
-    flags.output_edges         = true;
-    flags.output_only_relevant = false;
+  for (unsigned int l = 0; l < v.size(); ++l)
+    {
+      {
+        GridOutFlags::Vtk flags;
+        flags.output_cells         = false;
+        flags.output_faces         = true;
+        flags.output_edges         = true;
+        flags.output_only_relevant = false;
 
-    GridOut       grid_out_2;
-    std::ofstream out(
-      "boundary-" +
-      std::to_string(Utilities::MPI::this_mpi_process(MPI_COMM_WORLD)) +
-      ".vtk");
-    grid_out_2.set_flags(flags);
-    grid_out_2.write_vtk(*v[1], out);
-  }
+        GridOut       grid_out_2;
+        std::ofstream out(
+          "boundary-" + std::to_string(l) + "-" +
+          std::to_string(Utilities::MPI::this_mpi_process(MPI_COMM_WORLD)) +
+          ".vtk");
+        grid_out_2.set_flags(flags);
+        grid_out_2.write_vtk(*v[l], out);
+      }
 
-  {
-    GridOutFlags::Vtk flags;
-    flags.output_cells         = true;
-    flags.output_faces         = false;
-    flags.output_edges         = false;
-    flags.output_only_relevant = false;
+      {
+        GridOutFlags::Vtk flags;
+        flags.output_cells         = true;
+        flags.output_faces         = false;
+        flags.output_edges         = false;
+        flags.output_only_relevant = false;
 
-    GridOut       grid_out_2;
-    std::ofstream out(
-      "grid-" +
-      std::to_string(Utilities::MPI::this_mpi_process(MPI_COMM_WORLD)) +
-      ".vtk");
-    grid_out_2.set_flags(flags);
-    grid_out_2.write_vtk(*v[1], out);
-  }
+        GridOut       grid_out_2;
+        std::ofstream out(
+          "grid-" + std::to_string(l) + "-" +
+          std::to_string(Utilities::MPI::this_mpi_process(MPI_COMM_WORLD)) +
+          ".vtk");
+        grid_out_2.set_flags(flags);
+        grid_out_2.write_vtk(*v[l], out);
+      }
+    }
 }
