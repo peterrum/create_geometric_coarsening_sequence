@@ -65,8 +65,6 @@ create_geometric_coarsening_sequence(
           temp_tria.coarsen_global();
         }
 
-      // convert p:d:T to a serial Triangulation
-
       unsigned int const group_size = [&]() {
         auto comm = temp_tria.get_communicator();
 
@@ -91,6 +89,37 @@ create_geometric_coarsening_sequence(
         return size_shared_max;
       }();
 
+      // convert p:d:T to a serial Triangulation
+
+      Triangulation<dim, spacedim> tria_serial;
+
+      if (true)
+        {
+          auto [points, cell_data, sub_cell_data] =
+            GridTools::get_coarse_mesh_description(temp_tria);
+
+          std::vector<std::pair<unsigned int, CellData<dim>>> cell_data_temp;
+
+          unsigned int counter = 0;
+
+          for (const auto &cell : temp_tria.cell_iterators_on_level(0))
+            cell_data_temp.emplace_back(cell->id().get_coarse_cell_id(),
+                                        cell_data[counter++]);
+
+          std::sort(cell_data_temp.begin(),
+                    cell_data_temp.end(),
+                    [](const auto &a, const auto &b) {
+                      return a.first < b.first;
+                    });
+
+          cell_data.clear();
+
+          for (const auto &i : cell_data_temp)
+            cell_data.emplace_back(i.second);
+
+          tria_serial.create_triangulation(points, cell_data, sub_cell_data);
+        }
+
       for (unsigned int l = coarse_grid_sizes.size(); l > 0; --l)
         {
           // create empty (fully distributed) triangulation
@@ -110,32 +139,7 @@ create_geometric_coarsening_sequence(
           // extract relevant information from distributed triangulation
           auto const construction_data = TriangulationDescription::Utilities::
             create_description_from_triangulation_in_groups<dim, dim>(
-              [&](auto &tria) {
-                auto [points, cell_data, sub_cell_data] =
-                  GridTools::get_coarse_mesh_description(temp_tria);
-
-                std::vector<std::pair<unsigned int, CellData<dim>>>
-                  cell_data_temp;
-
-                unsigned int counter = 0;
-
-                for (const auto &cell : temp_tria.cell_iterators_on_level(0))
-                  cell_data_temp.emplace_back(cell->id().get_coarse_cell_id(),
-                                              cell_data[counter++]);
-
-                std::sort(cell_data_temp.begin(),
-                          cell_data_temp.end(),
-                          [](const auto &a, const auto &b) {
-                            return a.first < b.first;
-                          });
-
-                cell_data.clear();
-
-                for (const auto &i : cell_data_temp)
-                  cell_data.emplace_back(i.second);
-
-                tria.create_triangulation(points, cell_data, sub_cell_data);
-              },
+              [&](auto &tria) { tria.copy_triangulation(tria_serial); },
               [&](auto &tria, auto const &, const auto) {
                 GridTools::partition_triangulation_zorder(n_partitions, tria);
                 // GridTools::partition_triangulation(n_partitions, tria);
@@ -148,7 +152,7 @@ create_geometric_coarsening_sequence(
 
           // save mesh
           coarse_grid_triangulations[l - 1] = new_tria;
-          temp_tria.coarsen_global();
+          tria_serial.coarsen_global();
         }
     }
 
