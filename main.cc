@@ -128,45 +128,61 @@ create_geometric_coarsening_sequence(
 
       std::cout << "B" << std::endl;
 
-      std::vector<std::vector<std::vector<CellId>>> refinement_flags(
-        temp_tria.n_global_levels() - 1);
+      if (temp_tria.n_global_levels() > 1)
+        {
+          std::vector<std::vector<std::vector<CellId>>> refinement_flags(
+            temp_tria.n_global_levels() - 1);
 
-      std::cout << "C" << std::endl;
-      {
-        MPI_Comm comm = temp_tria.get_communicator();
-
-        for (unsigned int l = 0; l < temp_tria.n_global_levels() - 1; ++l)
+          std::cout << "C" << std::endl;
           {
-            std::vector<CellId> local_refinement_flags;
+            MPI_Comm comm = temp_tria.get_communicator();
 
-            for (const auto &cell : temp_tria.cell_iterators_on_level(l))
-              if (cell->has_children())
-                local_refinement_flags.push_back(cell->id());
+            for (unsigned int l = 0; l < temp_tria.n_global_levels() - 1; ++l)
+              {
+                std::vector<CellId> local_refinement_flags;
+
+                for (const auto &cell : temp_tria.cell_iterators_on_level(l))
+                  if (cell->has_children())
+                    local_refinement_flags.push_back(cell->id());
 
 
-            refinement_flags[l] =
-              Utilities::MPI::gather(comm, local_refinement_flags, 0);
+                refinement_flags[l] =
+                  Utilities::MPI::gather(comm, local_refinement_flags, 0);
+              }
+
+            MPI_Comm comm_root;
+            MPI_Comm_split(comm, my_rank == group_root, my_rank, &comm_root);
+
+            if (my_rank == group_root)
+              refinement_flags =
+                Utilities::MPI::broadcast(comm, refinement_flags);
+
+            MPI_Comm_free(&comm_root);
           }
 
-        MPI_Comm comm_root;
-        MPI_Comm_split(comm, my_rank == group_root, my_rank, &comm_root);
+          std::cout << "D" << std::endl;
 
-        if (my_rank == group_root)
-          refinement_flags = Utilities::MPI::broadcast(comm, refinement_flags);
-
-        MPI_Comm_free(&comm_root);
-      }
-
-      std::cout << "D" << std::endl;
-
-      if (my_rank == group_root)
-        {
-          for (unsigned int l = 0; refinement_flags.size(); ++l)
+          if (my_rank == group_root)
             {
-              for (const auto &flags : refinement_flags[l])
-                for (const auto &cell_id : flags)
-                  tria_serial.create_cell_iterator(cell_id)->set_refine_flag();
-              tria_serial.execute_coarsening_and_refinement();
+              std::cout << "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" << std::endl;
+
+              for (unsigned int l = 0; l < refinement_flags.size(); ++l)
+                {
+                  unsigned int counter = 0;
+                  for (const auto &flags : refinement_flags[l])
+                    {
+                      std::cout << "flags " << flags.size() << std::endl;
+                      for (const auto &cell_id : flags)
+                        {
+                          tria_serial.create_cell_iterator(cell_id)
+                            ->set_refine_flag();
+                          counter++;
+                        }
+                    }
+
+                  if (counter > 0)
+                    tria_serial.execute_coarsening_and_refinement();
+                }
             }
         }
 
@@ -212,7 +228,9 @@ create_geometric_coarsening_sequence(
 
           // save mesh
           coarse_grid_triangulations[l - 1] = new_tria;
-          tria_serial.coarsen_global();
+
+          if (my_rank == group_root)
+            tria_serial.coarsen_global();
         }
 
       std::cout << "F" << std::endl;
