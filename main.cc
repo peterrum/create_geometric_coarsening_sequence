@@ -36,7 +36,8 @@ create_geometric_coarsening_sequence(
       temp_tria.copy_triangulation(*fine_triangulation);
       temp_tria.coarsen_global();
 
-      std::vector<unsigned int> coarse_grid_sizes = {5, 10};
+      std::vector<unsigned int> coarse_grid_sizes = {5, 10}; // TODO:
+                                                             // parameter
 
       // create coarse meshes
       for (unsigned int l = (fine_triangulation->n_global_levels() - 1);
@@ -89,14 +90,14 @@ create_geometric_coarsening_sequence(
         return size_shared_max;
       }();
 
-      // convert p:d:T to a serial Triangulation
-
-      Triangulation<dim, spacedim> tria_serial;
-
       const unsigned int my_rank =
         ::Utilities::MPI::this_mpi_process(temp_tria.get_communicator());
       const unsigned int group_root = (my_rank / group_size) * group_size;
 
+      // convert p:d:T to a serial Triangulation
+      Triangulation<dim, spacedim> tria_serial;
+
+      // ... create coarse grid on root processes
       if (my_rank == group_root)
         {
           auto [points, cell_data, sub_cell_data] =
@@ -124,11 +125,12 @@ create_geometric_coarsening_sequence(
           tria_serial.create_triangulation(points, cell_data, sub_cell_data);
         }
 
+      // ... execute refinement on root process
       if (temp_tria.n_global_levels() > 1)
         {
+          // ... collect refinement flags
           std::vector<std::vector<std::vector<CellId>>> refinement_flags(
             temp_tria.n_global_levels() - 1);
-
           {
             MPI_Comm comm = temp_tria.get_communicator();
 
@@ -155,6 +157,7 @@ create_geometric_coarsening_sequence(
             MPI_Comm_free(&comm_root);
           }
 
+          // ... actually perform refinement
           if (my_rank == group_root)
             {
               for (unsigned int l = 0; l < refinement_flags.size(); ++l)
@@ -176,6 +179,8 @@ create_geometric_coarsening_sequence(
             }
         }
 
+      // continue as above but do not work on p:d:T but on the serial
+      // triangulation
       for (unsigned int l = coarse_grid_sizes.size(); l > 0; --l)
         {
           // create empty (fully distributed) triangulation
